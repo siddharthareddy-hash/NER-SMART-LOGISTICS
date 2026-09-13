@@ -114,7 +114,20 @@ app.post("/api/simulate-tick", async (_q, res) => {
 
 const dist = path.join(__dirname, "..", "client", "dist");
 app.use(express.static(dist));
-app.get(/^(?!\/api).*/, (_q, res) => res.sendFile(path.join(dist, "index.html")));
+app.use((req, res) => {
+  if (req.path.startsWith("/api")) {
+    return res.status(404).json({ error: "Unknown API endpoint" });
+  }
+  const indexPath = path.join(dist, "index.html");
+  if (require("fs").existsSync(indexPath)) return res.sendFile(indexPath);
+  res.status(200).json({
+    name: "NER Smart Logistics API",
+    status: "live",
+    endpoints: ["/api/routes", "/api/vehicles", "/api/incidents", "/api/alerts", "/api/simulate-tick"],
+    note: "Frontend hosted separately on Vercel",
+  });
+});
+
 
 const PORT = process.env.PORT || 5000;
 mongoose.connect(process.env.MONGO_URI)
