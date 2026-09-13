@@ -1,0 +1,53 @@
+import React, { useEffect, useState } from "react";
+
+import api from "../api";
+
+const badge = r => r?.riskScore > 80 ? "🔴 CRITICAL" : r?.riskScore > 60 ? "🟠 HIGH RISK" : "🟢 SAFE";
+
+export default function Dashboard() {
+  const [d, setD] = useState({ routes: [], vehicles: [], alerts: [], incidents: [] });
+  const load = async () => {
+    const [r, v, a, i] = await Promise.all(
+      ["routes", "vehicles", "alerts", "incidents"].map(k => api.get(`/api/${k}`))
+    );
+    setD({ routes: r.data, vehicles: v.data, alerts: a.data, incidents: i.data });
+  };
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
+
+  return (
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <h1 className="text-2xl font-bold mb-6">Command Center Dashboard</h1>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[["Routes", d.routes.length, "🗺"], ["Vehicles", d.vehicles.length, "🚚"],
+          ["Alerts", d.alerts.length, "🔔"], ["Incidents", d.incidents.length, "📍"]].map(([l, n, e]) => (
+          <div key={l} className="bg-white p-6 rounded-xl shadow text-center">
+            <div className="text-4xl">{e}</div>
+            <div className="text-3xl font-extrabold mt-2">{n}</div>
+            <div className="text-gray-500">{l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid md:grid-cols-2 gap-6 mt-8">
+        <div className="bg-white rounded-xl shadow p-5">
+          <h2 className="font-bold text-lg mb-3">Route Status</h2>
+          {d.routes.map(r => (
+            <div key={r._id} className="flex justify-between p-3 border-b last:border-0">
+              <span>{r.name}</span>
+              <span className="font-bold">{badge(r)} {r.riskScore ?? "—"}%</span>
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded-xl shadow p-5">
+          <h2 className="font-bold text-lg mb-3">🚨 Critical Alerts</h2>
+          {d.alerts.length === 0 && <p className="text-gray-400">No alerts. All clear.</p>}
+          {d.alerts.slice(0, 6).map(a => (
+            <div key={a._id} className={`p-3 my-2 rounded-lg ${a.level === "CRITICAL" ? "bg-red-100" : "bg-blue-50"}`}>
+              <b>{a.title}</b>
+              <p className="text-sm text-gray-600">{a.message}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
