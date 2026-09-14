@@ -127,6 +127,19 @@ app.use((req, res) => {
     note: "Frontend hosted separately on Vercel",
   });
 });
+const { routeWeather } = require("./weather");
+
+app.get("/api/weather", async (_q, res) => {
+  try {
+    const routes = await Route.find();
+    const out = await Promise.all(routes.map(async r => ({
+      routeId: r.routeId, name: r.name, weather: await routeWeather(r),
+    })));
+    res.json(out);
+  } catch (e) {
+    res.status(502).json({ error: "Weather service unavailable: " + e.message });
+  }
+});
 
 
 const PORT = process.env.PORT || 5000;

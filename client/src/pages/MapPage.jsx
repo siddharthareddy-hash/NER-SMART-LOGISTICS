@@ -29,7 +29,14 @@ export default function MapPage() {
     const [r, v, i] = await Promise.all(["routes", "vehicles", "incidents"].map(k => api.get(`/api/${k}`)));
     setRoutes(r.data); setVehicles(v.data); setIncidents(i.data);
   };
-  useEffect(() => { load(); const t = setInterval(load, 6000); return () => clearInterval(t); }, []);
+
+  // poll every 6s normally; while simulating, the sim tick drives refreshes
+  useEffect(() => {
+    load();
+    if (simulating) return;
+    const t = setInterval(load, 6000);
+    return () => clearInterval(t);
+  }, [simulating]);
 
   const toggleSim = () => {
     if (simulating) { clearInterval(timer.current); setSimulating(false); return; }
@@ -39,9 +46,6 @@ export default function MapPage() {
   useEffect(() => () => clearInterval(timer.current), []);
 
   const color = r => r.riskScore > 80 ? "#dc2626" : r.riskScore > 60 ? "#ea580c" : "#16a34a";
-  console.log("MAP DEBUG routes:", routes.length, "vehicles:", vehicles.length,
-  vehicles.map(v => ({ plate: v.plate, progress: v.progress, routeId: String(v.routeId) })));
-
 
   return (
     <div className="relative">
@@ -49,25 +53,44 @@ export default function MapPage() {
         className={`absolute top-4 right-4 z-[1000] px-5 py-2 rounded-lg font-bold shadow-lg text-white ${simulating ? "bg-red-600" : "bg-green-600"}`}>
         {simulating ? "⏸ Stop GPS Simulation" : "▶ Start GPS Simulation"}
       </button>
-      <MapContainer center={[25.8, 91.9]} zoom={8} style={{ height: "88vh" }}>
+
+      {/* Live weather + risk strip */}
+      <div className="flex gap-3 p-3 flex-wrap">
+        {routes.map(r => (
+          <div key={r._id}
+            className="px-4 py-2 rounded-lg bg-white shadow text-sm border-l-4"
+            style={{ borderLeftColor: color(r) }}>
+            <b>{r.name.split(":")[0]}</b> · Risk {r.riskScore}% · {r.status}
+            {r.liveWeather && <> · 🌦️ {r.liveWeather.condition} {Math.round(r.liveWeather.temp)}°C{r.liveWeather.rainfall > 0 && ` · ${r.liveWeather.rainfall}mm/h rain`}</>}
+          </div>
+        ))}
+      </div>
+
+      <MapContainer center={[25.8, 91.9]} zoom={8} style={{ height: "80vh" }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap" />
 
         {routes.map(r => (
           <Polyline key={r._id} positions={r.coords} pathOptions={{ color: color(r), weight: 6 }}>
             <Popup>
               <b>{r.name}</b><br />
-              Risk Score: <b>{r.riskScore}%</b><br />
+              Risk Score: <b>{r.riskScore}%</b> ({r.level})<br />
               Status: <b>{r.status}</b>
+              {r.liveWeather && (
+                <>
+                  <br />🌦️ Live: <b>{r.liveWeather.condition}</b>, {Math.round(r.liveWeather.temp)}°C
+                  {r.liveWeather.rainfall > 0 && <> · {r.liveWeather.rainfall}mm/h rain</>}
+                </>
+              )}
             </Popup>
           </Polyline>
         ))}
 
         {vehicles.map(v => {
-          const route = routes.find(r => String(r._id) === String(v.routeId)) || routes[0];
-          const p = posOn(route?.coords, v.progress);
+          const route = routes.find(r => String(r._id) === String(v.routeId));
+          if (!route) return null; // wait for data — never teleport trucks to a wrong route
+          const p = posOn(route.coords, v.progress);
           return (
             <Marker key={v._id} position={p} icon={truckIcon(v.plate)}>
-
               <Popup>
                 🚚 <b>{v.plate}</b><br />{v.cargo}<br />
                 {v.from} → {v.to}<br />
