@@ -22,9 +22,10 @@ async function fetchWeather(lat, lng) {
   };
 }
 
-// Weather for a route = worst of its waypoints
+// Weather for a route = worst of its waypoints (capped at 3 to save free-tier calls)
 async function routeWeather(route) {
-  const points = route.coords || [];
+  const points = (route.coords || []).slice(0, 3);
+  if (!points.length) return null;
   const readings = await Promise.all(points.map(p => fetchWeather(p[0], p[1])));
   const worst = readings.reduce((a, b) => (b.rainfall > a.rainfall ? b : a));
   return { ...worst, region: worst.description };

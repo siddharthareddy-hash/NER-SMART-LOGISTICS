@@ -4,6 +4,7 @@ const cors = require("cors");
 const path = require("path");
 const mongoose = require("mongoose");
 const { scoreRoute } = require("./riskEngine");
+const { routeWeather } = require("./weather");
 const { Route, Incident, Vehicle, Alert } = require("./models");
 
 const app = express();
@@ -12,10 +13,28 @@ app.use(express.json());
 
 app.get("/api/health", (_q, s) => s.json({ ok: true, service: "NER Smart Logistics API" }));
 
+app.get("/api/weather", async (_q, res) => {
+  try {
+    const routes = await Route.find();
+    const out = await Promise.all(routes.map(async r => ({
+      routeId: r.routeId, name: r.name, weather: await routeWeather(r),
+    })));
+    res.json(out);
+  } catch (e) {
+    res.status(502).json({ error: "Weather service unavailable: " + e.message });
+  }
+});
+
 app.get("/api/routes", async (_q, res) => {
   const routes = await Route.find();
   const latest = await Incident.findOne().sort({ createdAt: -1 });
-  res.json(routes.map(r => ({ ...r.toObject(), ...scoreRoute(r, latest || {}) })));
+  const out = await Promise.all(routes.map(async r => {
+    let live = null;
+    try { live = await routeWeather(r); } catch (_e) {}   // fail-soft
+    const scored = scoreRoute({ ...r.toObject() }, { ...(latest ? latest.toObject() : {}), liveWeather: live });
+    return { ...r.toObject(), ...scored, liveWeather: live };
+  }));
+  res.json(out);
 });
 
 app.post("/api/incidents", async (req, res) => {
@@ -28,19 +47,22 @@ app.post("/api/incidents", async (req, res) => {
     if (!type || !location) return res.status(400).json({ error: "type & location required" });
 
     const routes = await Route.find();
-    const scored = routes.map(r => scoreRoute(r, req.body));
+    const scored = await Promise.all(routes.map(async r => {
+      let live = null;
+      try { live = await routeWeather(r); } catch (_e) {}
+      return scoreRoute(r, { ...req.body, liveWeather: live });
+    }));
     const affected = scored.filter(s => s.riskScore > 60).sort((a, b) => b.riskScore - a.riskScore)[0];
     const safe = scored
-  .filter(s => String(s.routeId) !== String(affected?.routeId))
-  .sort((a, b) => a.riskScore - b.riskScore)[0] || null;
-
+      .filter(s => String(s.routeId) !== String(affected?.routeId))
+      .sort((a, b) => a.riskScore - b.riskScore)[0] || null;
 
     const incident = await Incident.create({
-  type, location, severity, rainfall, description,
-  lat: req.body.lat, lng: req.body.lng,
-  riskScore: affected ? affected.riskScore : 25,
-  status: affected ? affected.status : "SAFE",
-});
+      type, location, severity, rainfall, description,
+      lat: req.body.lat, lng: req.body.lng,
+      riskScore: affected ? affected.riskScore : 25,
+      status: affected ? affected.status : "SAFE",
+    });
 
     if (affected) await Route.findByIdAndUpdate(affected.routeId, { status: "BLOCKED" });
 
@@ -79,7 +101,6 @@ app.post("/api/simulate-tick", async (_q, res) => {
   const routes = await Route.find();
   const lastAlert = await Alert.findOne().sort({ createdAt: -1 });
 
-  // find a blocked/high-risk route and the safe alternative (from the latest alert)
   const blocked = routes.find(r => r.status === "BLOCKED" || r.riskScore > 80);
   const safeAlt = lastAlert?.recommendedRoute
     ? routes.find(r => r.name.startsWith(lastAlert.recommendedRoute.split(":")[0]) && r.status !== "BLOCKED" && r.riskScore <= 80)
@@ -93,17 +114,16 @@ app.post("/api/simulate-tick", async (_q, res) => {
     const onBlocked = vRoute && (vRoute.status === "BLOCKED" || vRoute.riskScore > 80);
 
     if (onBlocked && safeAlt && String(safeAlt._id) !== String(v.routeId)) {
-      // reroute onto the safe corridor
       v.routeId = safeAlt._id;
-      v.progress = 5; // rejoin near the start of the safe route
+      v.progress = 5;
       v.status = "DIVERTED";
       diverted++;
     } else if (onBlocked) {
-      v.status = "HALTED"; // blocked, no alternative — hold position
+      v.status = "HALTED";
       halted++;
       continue;
     } else if (v.status === "HALTED") {
-      v.status = "IN TRANSIT"; // route cleared again, resume
+      v.status = "IN TRANSIT";
     }
 
     v.progress = (v.progress + 4) % 100;
@@ -112,6 +132,7 @@ app.post("/api/simulate-tick", async (_q, res) => {
   res.json({ ticked: vehicles.length, diverted, halted });
 });
 
+// ⚠️ catch-all MUST be the last route — everything above it is reachable
 const dist = path.join(__dirname, "..", "client", "dist");
 app.use(express.static(dist));
 app.use((req, res) => {
@@ -123,24 +144,10 @@ app.use((req, res) => {
   res.status(200).json({
     name: "NER Smart Logistics API",
     status: "live",
-    endpoints: ["/api/routes", "/api/vehicles", "/api/incidents", "/api/alerts", "/api/simulate-tick"],
+    endpoints: ["/api/routes", "/api/vehicles", "/api/incidents", "/api/alerts", "/api/weather", "/api/simulate-tick"],
     note: "Frontend hosted separately on Vercel",
   });
 });
-const { routeWeather } = require("./weather");
-
-app.get("/api/weather", async (_q, res) => {
-  try {
-    const routes = await Route.find();
-    const out = await Promise.all(routes.map(async r => ({
-      routeId: r.routeId, name: r.name, weather: await routeWeather(r),
-    })));
-    res.json(out);
-  } catch (e) {
-    res.status(502).json({ error: "Weather service unavailable: " + e.message });
-  }
-});
-
 
 const PORT = process.env.PORT || 5000;
 mongoose.connect(process.env.MONGO_URI)
