@@ -4,6 +4,11 @@ import api from "../api";
 
 const badge = r => r?.riskScore > 80 ? "🔴 CRITICAL" : r?.riskScore > 60 ? "🟠 HIGH RISK" : "🟢 SAFE";
 
+const wIcon = c => ({
+  Thunderstorm: "⛈️", Drizzle: "🌦️", Rain: "🌧️", Snow: "❄️",
+  Clear: "☀️", Clouds: "☁️", Mist: "🌫️", Fog: "🌫️", Haze: "🌫️",
+}[c] || "🌡️");
+
 export default function Dashboard() {
   const [d, setD] = useState({ routes: [], vehicles: [], alerts: [], incidents: [] });
   const load = async () => {
@@ -14,12 +19,15 @@ export default function Dashboard() {
   };
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
 
+  const rainRoutes = d.routes.filter(r => r.liveWeather?.rainfall > 0).length;
+
   return (
     <div className="p-8 bg-gray-50 min-h-screen">
       <h1 className="text-2xl font-bold mb-6">Command Center Dashboard</h1>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[["Routes", d.routes.length, "🗺"], ["Vehicles", d.vehicles.length, "🚚"],
-          ["Alerts", d.alerts.length, "🔔"], ["Incidents", d.incidents.length, "📍"]].map(([l, n, e]) => (
+          ["Alerts", d.alerts.length, "🔔"], ["Incidents", d.incidents.length, "📍"],
+          ["Rain-affected", rainRoutes, "🌧️"]].map(([l, n, e]) => (
           <div key={l} className="bg-white p-6 rounded-xl shadow text-center">
             <div className="text-4xl">{e}</div>
             <div className="text-3xl font-extrabold mt-2">{n}</div>
@@ -31,8 +39,16 @@ export default function Dashboard() {
         <div className="bg-white rounded-xl shadow p-5">
           <h2 className="font-bold text-lg mb-3">Route Status</h2>
           {d.routes.map(r => (
-            <div key={r._id} className="flex justify-between p-3 border-b last:border-0">
-              <span>{r.name}</span>
+            <div key={r._id} className="flex justify-between items-center p-3 border-b last:border-0">
+              <div>
+                <div>{r.name}</div>
+                {r.liveWeather && (
+                  <div className="text-xs text-gray-500">
+                    {wIcon(r.liveWeather.condition)} {r.liveWeather.description} · {Math.round(r.liveWeather.temp)}°C
+                    {r.liveWeather.rainfall > 0 && <span className="text-blue-600"> · {r.liveWeather.rainfall}mm/h</span>}
+                  </div>
+                )}
+              </div>
               <span className="font-bold">{badge(r)} {r.riskScore ?? "—"}%</span>
             </div>
           ))}
