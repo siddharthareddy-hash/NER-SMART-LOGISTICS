@@ -4,7 +4,7 @@ const cors = require("cors");
 const path = require("path");
 const mongoose = require("mongoose");
 const { scoreRoute } = require("./riskEngine");
-const { routeWeather } = require("./weather");
+const { routeWeather, routeForecast } = require("./weather");
 const { Route, Incident, Vehicle, Alert } = require("./models");
 
 const app = express();
@@ -22,6 +22,20 @@ app.get("/api/weather", async (_q, res) => {
     res.json(out);
   } catch (e) {
     res.status(502).json({ error: "Weather service unavailable: " + e.message });
+  }
+});
+
+app.get("/api/forecast", async (_q, res) => {
+  try {
+    const routes = await Route.find();
+    const out = (await Promise.all(routes.map(async r => {
+      let forecast = null;
+      try { forecast = await routeForecast(r); } catch (_e) {}
+      return { routeId: r.routeId, name: r.name, forecast };
+    }))).filter(x => x.forecast?.advisory);
+    res.json(out);
+  } catch (e) {
+    res.status(502).json({ error: "Forecast unavailable: " + e.message });
   }
 });
 
@@ -144,7 +158,7 @@ app.use((req, res) => {
   res.status(200).json({
     name: "NER Smart Logistics API",
     status: "live",
-    endpoints: ["/api/routes", "/api/vehicles", "/api/incidents", "/api/alerts", "/api/weather", "/api/simulate-tick"],
+    endpoints: ["/api/routes", "/api/vehicles", "/api/incidents", "/api/alerts", "/api/weather", "/api/forecast", "/api/simulate-tick"],
     note: "Frontend hosted separately on Vercel",
   });
 });

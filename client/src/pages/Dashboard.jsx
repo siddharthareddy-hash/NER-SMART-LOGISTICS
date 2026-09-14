@@ -11,11 +11,16 @@ const wIcon = c => ({
 
 export default function Dashboard() {
   const [d, setD] = useState({ routes: [], vehicles: [], alerts: [], incidents: [] });
+  const [advisories, setAdvisories] = useState([]);
+
   const load = async () => {
     const [r, v, a, i] = await Promise.all(
       ["routes", "vehicles", "alerts", "incidents"].map(k => api.get(`/api/${k}`))
     );
     setD({ routes: r.data, vehicles: v.data, alerts: a.data, incidents: i.data });
+    // forecast advisories — refresh every cycle, fail-soft
+    try { const f = await api.get("/api/forecast"); setAdvisories(f.data); }
+    catch { setAdvisories([]); }
   };
   useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
 
@@ -35,6 +40,19 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {/* 🌦️ Predictive advisories — visible only when heavy rain/thunderstorms are forecast */}
+      {advisories.map(a => (
+        <div key={a.routeId}
+          className={`p-4 rounded-xl shadow mt-4 border-l-4 ${a.forecast.level === "CRITICAL" ? "bg-red-100 border-red-600" : "bg-amber-100 border-amber-500"}`}>
+          <b>{a.forecast.level === "CRITICAL" ? "⛈️" : "⚠️"} {a.forecast.level} ADVISORY — PREDICTIVE</b>
+          <p className="text-sm mt-1">{a.forecast.advisory}</p>
+          <p className="text-xs text-gray-500 mt-1">
+            Current: {wIcon(a.forecast.condition)} {a.forecast.description} · {Math.round(a.forecast.temp)}°C · expected rainfall {a.forecast.rainfall}mm
+          </p>
+        </div>
+      ))}
+
       <div className="grid md:grid-cols-2 gap-6 mt-8">
         <div className="bg-white rounded-xl shadow p-5">
           <h2 className="font-bold text-lg mb-3">Route Status</h2>

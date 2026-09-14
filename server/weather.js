@@ -1,3 +1,4 @@
+require("dotenv").config();
 const axios = require("axios");
 
 // Coordinates for NER corridor waypoints
@@ -15,9 +16,9 @@ async function fetchWeather(lat, lng) {
   );
   return {
     temp: data.main.temp,
-    condition: data.weather[0].main,          // "Rain", "Clear", "Thunderstorm"...
+    condition: data.weather[0].main,
     description: data.weather[0].description,
-    rainfall: data.rain?.["1h"] || 0,          // mm in last hour
+    rainfall: data.rain?.["1h"] || 0,
     wind: data.wind.speed,
   };
 }
@@ -31,4 +32,43 @@ async function routeWeather(route) {
   return { ...worst, region: worst.description };
 }
 
-module.exports = { routeWeather, fetchWeather, REGIONS };
+// ── Forecast advisory: worst rain expected at any waypoint within next 6 hours ──
+async function routeForecast(route) {
+  const key = process.env.OPENWEATHER_KEY;
+  const points = (route.coords || []).slice(0, 3);
+  if (!key || !points.length) return null;
+
+  let worst = null;
+  for (const [lat, lng] of points) {
+    const { data } = await axios.get(
+      "https://api.openweathermap.org/data/2.5/forecast",
+      { params: { lat, lon: lng, appid: key, units: "metric" } }
+    );
+    // next 6 hours only (3-hour forecast steps)
+    for (const f of (data.list || []).slice(0, 2)) {
+      const rain = f.rain?.["3h"] || 0;
+      const cond = f.weather?.[0]?.main || "Clear";
+      const desc = f.weather?.[0]?.description || "";
+      const score = rain + (cond === "Thunderstorm" ? 10 : 0);
+      if (!worst || score > worst.score) {
+        worst = {
+          score,
+          hoursAhead: Math.round((new Date(f.dt * 1000) - new Date()) / 3600000),
+          rainfall: rain, condition: cond, description: desc,
+          temp: f.main?.temp,
+        };
+      }
+    }
+  }
+
+  if (worst && worst.score >= 2) {  // advisory threshold: ≥2mm in a 3h window
+    worst.advisory =
+      `⚠️ ${worst.condition === "Thunderstorm" ? "Thunderstorms" : "Heavy rain"} ` +
+      `(worst.rainfallmm)expectedon{worst.rainfall}mm) expected onworst.rainfallmm)expectedon{route.name.split(":")[0]} in ~${worst.hoursAhead}h — ` +
+      `pre-position vehicles on alternate corridor now.`;
+    worst.level = worst.condition === "Thunderstorm" || worst.rainfall > 10 ? "CRITICAL" : "WARNING";
+  }
+  return worst;
+}
+
+module.exports = { routeWeather, routeForecast, fetchWeather, REGIONS };
