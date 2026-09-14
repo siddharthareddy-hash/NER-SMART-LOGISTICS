@@ -1,7 +1,6 @@
 require("dotenv").config();
 const axios = require("axios");
 
-// Coordinates for NER corridor waypoints
 const REGIONS = {
   Shillong:  { lat: 25.5788, lng: 91.8933 },
   Nongpoh:   { lat: 25.9068, lng: 91.8822 },
@@ -23,7 +22,6 @@ async function fetchWeather(lat, lng) {
   };
 }
 
-// Weather for a route = worst of its waypoints (capped at 3 to save free-tier calls)
 async function routeWeather(route) {
   const points = (route.coords || []).slice(0, 3);
   if (!points.length) return null;
@@ -32,7 +30,6 @@ async function routeWeather(route) {
   return { ...worst, region: worst.description };
 }
 
-// ── Forecast advisory: worst rain expected at any waypoint within next 6 hours ──
 async function routeForecast(route) {
   const key = process.env.OPENWEATHER_KEY;
   const points = (route.coords || []).slice(0, 3);
@@ -44,7 +41,6 @@ async function routeForecast(route) {
       "https://api.openweathermap.org/data/2.5/forecast",
       { params: { lat, lon: lng, appid: key, units: "metric" } }
     );
-    // next 6 hours only (3-hour forecast steps)
     for (const f of (data.list || []).slice(0, 2)) {
       const rain = f.rain?.["3h"] || 0;
       const cond = f.weather?.[0]?.main || "Clear";
@@ -61,11 +57,11 @@ async function routeForecast(route) {
     }
   }
 
-  if (worst && worst.score >= 2) {  // advisory threshold: ≥2mm in a 3h window
+  if (worst && worst.score >= 2) {
     worst.advisory =
-      `⚠️ ${worst.condition === "Thunderstorm" ? "Thunderstorms" : "Heavy rain"} ` +
-      `(worst.rainfallmm)expectedon{worst.rainfall}mm) expected onworst.rainfallmm)expectedon{route.name.split(":")[0]} in ~${worst.hoursAhead}h — ` +
-      `pre-position vehicles on alternate corridor now.`;
+      "⚠️ " + (worst.condition === "Thunderstorm" ? "Thunderstorms" : "Heavy rain") +
+      " (" + worst.rainfall + "mm) expected on " + route.name.split(":")[0] +
+      " in ~" + worst.hoursAhead + "h — pre-position vehicles on alternate corridor now.";
     worst.level = worst.condition === "Thunderstorm" || worst.rainfall > 10 ? "CRITICAL" : "WARNING";
   }
   return worst;
