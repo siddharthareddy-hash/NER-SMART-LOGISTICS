@@ -7,7 +7,7 @@
 
 [![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Vercel-blue)](YOUR_VERCEL_URL)
 [![API](https://img.shields.io/badge/⚡_API-Render-green)](YOUR_RENDER_URL)
-[![SIH](https://img.shields.io/badge/🏆_Smart_India_Hackathon-2025-orange)]()
+[![SIH](https://img.shields.io/badge/🏆_Smart_India_Hackathon-2026-orange)]()
 
 </div>
 
@@ -185,7 +185,7 @@ curl -X POST http://localhost:5000/api/incidents \
   -d '{"type":"Landslide","routeName":"Route A: Shillong → Nongpoh → Guwahati","location":"25.6,91.9","rainfall":5}'
 
 # 4. Advance simulation
-curl -X POST http://localhost:5000/api/simulate-tick
+curl -X POST https://ner-smart-logistics-dusky.vercel.app/
 ```
 
 ---
