@@ -21,9 +21,7 @@ Weighted multi-factor scoring:
 ## Tech Stack
 React + Leaflet (GIS) · Node/Express · MongoDB · Simulated GPS telemetry
 
-## Run
-cd server && npm i && npm run seed && npm start
-cd client && npm i && npm run dev
+
 
 ## Demo Flow
 1. Dashboard: all routes 🟢
