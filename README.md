@@ -7,7 +7,7 @@
 
 [![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Vercel-blue)](YOUR_VERCEL_URL)
 [![API](https://img.shields.io/badge/⚡_API-Render-green)](YOUR_RENDER_URL)
-[![SIH](https://img.shields.io/badge/🏆_Smart_India_Hackathon-2026-orange)]()
+[![SIH](https://img.shields.io/badge/🏆__Hackathon-2026-orange)]()
 
 </div>
 
@@ -240,12 +240,12 @@ curl -X POST https://ner-smart-logistics-dusky.vercel.app/
 
 <div align="center">
 
-### 🏆 Built for Smart India Hackathon 2025
+
 
 **"We don't react to disasters. We see them coming."**
 
 </div>
-# 🛰 NER Smart Logistics — SIH Problem Statement 26002
+# 🛰 NER Smart Logistics — 
 
 AI-assisted route risk prediction & dynamic rerouting for North-East Region logistics.
 
