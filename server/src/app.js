@@ -14,6 +14,32 @@ app.use(rateLimit({ windowMs: 60 * 1000, max: 100 }));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
+// ─── Dashboard feed: all routes + live weather + risk score ───
+app.get('/api/routes', async (req, res, next) => {
+  try {
+    const routes = await Route.find().lean();
+    const withRisk = await Promise.all(routes.map(async (r) => {
+      let weather = { rainfall: 0, windSpeed: 0, visibility: 10 };
+      try { weather = await getWeather(r.coordinates.lat, r.coordinates.lon); } catch {}
+      const { score, level, factors } = scoreRoute(weather, { floodHistory: r.floodHistory });
+      return {
+        ...r,
+        riskScore: score,
+        riskLevel: level,
+        factors,
+        liveWeather: {
+          rainfall: weather.rainfall,
+          temp: weather.temp ?? 0,
+          condition: weather.condition ?? 'Clear',
+          description: weather.description ?? '',
+        },
+      };
+    }));
+    withRisk.sort((a, b) => b.riskScore - a.riskScore);
+    res.json(withRisk);
+  } catch (err) { next(err); }
+});
+
 app.get('/api/routes/:id/risk', async (req, res, next) => {
   try {
     const route = await Route.findById(req.params.id);
@@ -47,6 +73,12 @@ app.post('/api/routes', async (req, res, next) => {
     next(err);
   }
 });
+
+// ─── Dashboard stubs — real implementations coming next ───
+app.get('/api/vehicles',  (req, res) => res.json([]));
+app.get('/api/alerts',    (req, res) => res.json([]));
+app.get('/api/incidents', (req, res) => res.json([]));
+app.get('/api/forecast',  (req, res) => res.json([]));
 
 app.use((err, req, res, next) => {
   console.error('Boom:', err.message);
