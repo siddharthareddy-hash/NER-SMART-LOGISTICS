@@ -1,42 +1,68 @@
-const W = { rainfall: 0.25, roadDamage: 0.35, historical: 0.15, traffic: 0.10, terrain: 0.15 };
-const SEV = { LOW: 25, MEDIUM: 55, HIGH: 90, CRITICAL: 100 };
-const BONUS = { LOW: 0, MEDIUM: 5, HIGH: 10, CRITICAL: 15 };
+// src/services/riskEngine.js
 
-// live weather condition → risk points
-const WEATHER_CONDITION_PENALTY = { Thunderstorm: 15, Rain: 8, Drizzle: 4, Snow: 12, Extreme: 20 };
+const WEIGHTS = { RAIN: 0.4, WIND: 0.2, VISIBILITY: 0.25, FLOOD_HISTORY: 0.15 };
 
-function scoreRoute(route, incident) {
-  const severity = (incident?.severity || "").toUpperCase();
+const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 
-  // rainfall: user-reported incident rainfall wins; else live API rainfall (scaled per hour)
-  const reported = Number(incident?.rainfall) || 0;
-  const liveRain = Number(incident?.liveWeather?.rainfall) || 0;
-  const rainMm = Math.max(reported, liveRain * 3); // hourly → demo-scale equivalent
-  const rainfall = Math.min(rainMm / 120, 1) * 100;
+// rainfall mm/hr → 0..100 danger
+const rainScore = (mm) => {
+  if (mm == null || mm < 0) return 0;
+  if (mm < 2.5) return mm / 2.5 * 25;        // light
+  if (mm < 10) return 25 + ((mm - 2.5) / 7.5) * 30;   // moderate
+  if (mm < 50) return 55 + ((mm - 10) / 40) * 30;     // heavy
+  return 100;                                 // extreme
+};
 
-  const roadDamage = SEV[severity] ?? 50;
+// wind km/h → 0..100
+const windScore = (kmh) => {
+  if (kmh == null || kmh < 0) return 0;
+  return clamp(((kmh - 20) / 80) * 100, 0, 100); // calm start at 20
+};
 
-  let riskScore = Math.round(
-    rainfall * W.rainfall +
-    roadDamage * W.roadDamage +
-    (route.historicalRisk ?? 30) * W.historical +
-    (route.traffic ?? 40) * W.traffic +
-    (route.terrainRisk ?? 60) * W.terrain
+// visibility km → 0..100 (lower visibility = higher risk)
+const visibilityScore = (km) => {
+  if (km == null || km < 0) return 0;
+  return clamp((10 - km) / 10 * 100, 0, 100);
+};
+
+const levelOf = (score) => {
+  if (score >= 75) return 'CRITICAL';
+  if (score >= 50) return 'HIGH';
+  if (score >= 25) return 'MODERATE';
+  return 'LOW';
+};
+
+/**
+ * Pure function — no DB, no network. Fully unit-testable.
+ * @param {Object} weather - { rainfall, windSpeed, visibility }
+ * @param {Object} routeMeta - { floodHistory } (0..100)
+ * @returns {{ score: number, level: string, factors: Array }}
+ */
+const scoreRoute = (weather = {}, routeMeta = {}) => {
+  const rain = rainScore(weather.rainfall);
+  const wind = windScore(weather.windSpeed);
+  const vis = visibilityScore(weather.visibility);
+  const flood = clamp(Number(routeMeta.floodHistory) || 0, 0, 100);
+
+  const score = Math.round(
+    rain * WEIGHTS.RAIN +
+    wind * WEIGHTS.WIND +
+    vis * WEIGHTS.VISIBILITY +
+    flood * WEIGHTS.FLOOD_HISTORY
   );
 
-  // incident severity bonus — real-time hazard escalation
-  riskScore = Math.min(riskScore + (BONUS[severity] || 0), 100);
+  const safeScore = clamp(Number.isFinite(score) ? score : 0, 0, 100);
 
-  // live weather escalation — active conditions on the corridor right now
-  const cond = incident?.liveWeather?.condition;
-  if (cond && WEATHER_CONDITION_PENALTY[cond]) {
-    riskScore = Math.min(riskScore + WEATHER_CONDITION_PENALTY[cond], 100);
-  }
+  return {
+    score: safeScore,
+    level: levelOf(safeScore),
+    factors: [
+      { name: 'RAIN', value: rain, weight: WEIGHTS.RAIN },
+      { name: 'WIND', value: wind, weight: WEIGHTS.WIND },
+      { name: 'VISIBILITY', value: vis, weight: WEIGHTS.VISIBILITY },
+      { name: 'FLOOD_HISTORY', value: flood, weight: WEIGHTS.FLOOD_HISTORY },
+    ],
+  };
+};
 
-  const level = riskScore <= 30 ? "LOW" : riskScore <= 60 ? "MEDIUM" : riskScore <= 80 ? "HIGH" : "CRITICAL";
-  const status = riskScore > 80 ? "BLOCKED" : riskScore > 60 ? "HIGH RISK" : "SAFE";
-
-  return { routeId: route._id, name: route.name, riskScore, level, status };
-}
-
-module.exports = { scoreRoute };
+module.exports = { scoreRoute, WEIGHTS };
